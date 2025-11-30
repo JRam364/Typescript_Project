@@ -6,15 +6,20 @@ export class GameWorld {
     string,
     {
      
+  
   x: number;
   y: number;
   color: string;
   speed: number;
-  actions: { dx: number; dy: number; speed: number; remaining: number }[];
-  vx:number;
+  actions: any[];
+  vx: number;
   vy: number;
-  targetX: number;
-  targetY: number;
+
+  // must be optional:
+  targetX?: number;
+  targetY?: number;
+      onFinishMove?: () => void;
+
 
 
 
@@ -65,19 +70,28 @@ export class GameWorld {
   });
 }
 
-moveTo(name: string, x: number, y: number, speed: number) {
-  const e = this.entities[name];
-  if (!e) return;
+moveTo(name: string, x: number, y: number, speed: number): Promise<void> {
+  return new Promise(resolve => {
+    const e = this.entities[name];
+    if (!e) return resolve();
 
-  const dx = x - e.x;
-  const dy = y - e.y;
-  const dist = Math.sqrt(dx*dx + dy*dy);
+    const dx = x - e.x;
+    const dy = y - e.y;
 
-  e.vx = (dx / dist) * speed;
-  e.vy = (dy / dist) * speed;
-  e.targetX = x;
-  e.targetY = y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist === 0) return resolve();
+
+    e.vx = (dx / dist) * speed;
+    e.vy = (dy / dist) * speed;
+
+    e.targetX = x;
+    e.targetY = y;
+
+    (e as any).onFinishMove = resolve;
+  });
 }
+
+
 
 moveDir(name: string, direction: string, speed: number) {
   const e = this.entities[name];
@@ -106,9 +120,12 @@ stop(name: string) {
   // Main update loop
   private update() {
     // Apply keyboard control to the controlled entity
+    
     if (this.controlledEntity) {
       const e = this.entities[this.controlledEntity];
       if (e) {
+      
+
         if (this.controlScheme === "arrows") {
           if (this.keys.has("ArrowUp")) e.y -= e.speed;
           if (this.keys.has("ArrowDown")) e.y += e.speed;
@@ -129,16 +146,29 @@ for (const e of Object.values(this.entities)) {
   e.y += e.vy;
 
   // stop when reaching MoveTo target
-  if (e.targetX !== undefined) {
-    if (Math.abs(e.x - e.targetX) < Math.abs(e.vx)) {
-      e.x = e.targetX;
-      e.y = e.targetY;
-      e.vx = 0;
-      e.vy = 0;
-      delete e.targetX;
-      delete e.targetY;
-    }
+  // stop when reaching target position
+if (e.targetX !== undefined && e.targetY !== undefined) {
+  const dx = e.targetX - e.x;
+  const dy = e.targetY - e.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist <= Math.abs(e.vx) + Math.abs(e.vy)) {
+    e.x = e.targetX;
+    e.y = e.targetY;
+
+    e.vx = 0;
+    e.vy = 0;
+
+    const cb = (e as any).onFinishMove;
+    if (cb) cb();
+
+    delete (e as any).onFinishMove;
+    delete e.targetX;
+    delete e.targetY;
   }
+}
+
+
 }
 
     // Apply queued movement actions (animated movement)

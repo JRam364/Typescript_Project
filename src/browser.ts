@@ -2,81 +2,66 @@ import { tokenize } from "./lexer";
 import { parse } from "./parser";
 import { GameWorld } from "./runtime/engine";
 
-async function main() {
-  console.log("Loading .gm file...");
+async function execute(node: any, world: GameWorld): Promise<void> {
+  switch (node.type) {
 
-  // Load your GM script
+    case "Spawn":
+      world.spawn(node.name, node.x, node.y, node.color);
+      break;
+
+    case "Move":
+      // relative movement: dx dy
+      world.move(node.name, node.dx, node.dy, node.speed ?? 1);
+      break;
+
+    case "MoveDir":
+      // continuous directional movement until stop()
+      world.moveDir(node.name, node.direction, node.speed ?? 1);
+      break;
+
+    case "MoveTo":
+      // one-time movement that stops automatically
+      await world.moveTo(node.name, node.x, node.y, node.speed);
+      break;
+
+    case "Stop":
+      world.stop(node.name);
+      break;
+
+    case "Control":
+      world.enableControl(node.name, node.scheme);
+      break;
+
+    case "Repeat":
+      for (let i = 0; i < node.count; i++) {
+        for (const inner of node.body) {
+          await execute(inner, world);
+        }
+      }
+      break;
+  }
+}
+
+
+async function main() {
   const response = await fetch("/examples/demo.gm");
   const source = await response.text();
 
-  console.log("Source:", source);
-
-  // Tokenize and parse
   const tokens = tokenize(source);
   const ast = parse(tokens);
 
-  console.log("AST:", ast.body);
-
-  // Setup canvas + world
   const canvas = document.getElementById("game") as HTMLCanvasElement;
   const world = new GameWorld(canvas);
 
-  // Interpret AST
-  for (const node of ast.body) {
-    if (node.type === "Spawn") {
-      console.log("SPAWN:", node);
-      world.spawn(node.name, node.x, node.y, node.color);
-    } 
-    else if (node.type === "Move") {
-  console.log("MOVE:", node);
-
-  const speed = node.speed ?? 1;
-
-  // apply movement speed multiplier
-  world.move(node.name, node.dx * speed, node.dy * speed);
-}
-
-    else if (node.type === "Control") {
-      console.log("CONTROL NODE:", node);
-      world.enableControl(node.name, node.scheme);
-    }
-    else if (node.type === "Render") {
-      console.log("RENDER");
-      // render is handled inside world.run()
-    }
-    else if (node.type === "Repeat") {
-  console.log("REPEAT:", node.count, "times");
-  for (let r = 0; r < node.count; r++) {
-    for (const inner of node.body) {
-      if (inner.type === "Move") {
-        world.move(inner.name, inner.dx, inner.dy);
-      }
-      if (inner.type === "Spawn") {
-        world.spawn(inner.name, inner.x, inner.y, inner.color);
-      }
-    }
-  }
-
-  
-}
-else if (node.type === "MoveTo") {
-  world.moveTo(node.name, node.x, node.y, node.speed);
-}
-else if (node.type === "MoveDir") {
-  world.moveDir(node.name, node.direction, node.speed);
-}
-else if (node.type === "Stop") {
-  world.stop(node.name);
-}
-
-
-  }
-
-  
-
-  // Start the game loop
   console.log("Starting game loop...");
-  world.run();
+  world.run();     // <-- RUN FIRST 🔥🔥🔥
+
+  // Then run script asynchronously
+  (async () => {
+    for (const node of ast.body) {
+      await execute(node, world);
+    }
+  })();
 }
 
 main();

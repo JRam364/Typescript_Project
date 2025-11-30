@@ -1,27 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>MyGameLang</title>
-  <style>
-    body {
-      background: #111;
-      margin: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-    canvas {
-      background: #4e4b4b;
-      border: 2px solid #ccc7c7;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>GM Language Playground</title>
+<link rel="stylesheet" href="/style.css">
+
+<!-- Monaco Editor -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+
 </head>
 <body>
-  <canvas id="game" width="800" height="600"></canvas>
 
-  <!-- Load your game -->
-  <script type="module" src="/src/browser.ts"></script>
+<div id="container">
+
+  <!-- Left side: CODE EDITOR -->
+  <div id="editor"></div>
+
+  <!-- Right side: GAME -->
+  <div id="game-area">
+      <canvas id="game" width="800" height="600"></canvas>
+      <button id="runBtn">Run Code</button>
+  </div>
+
+</div>
+
+<!-- FIXED PATH -->
+<script type="module" src="/src/app.js"></script>
+
 </body>
 </html>

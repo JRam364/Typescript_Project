@@ -21,9 +21,11 @@ export function tokenize(source: string): Token[] {
     if (/\s/.test(char)) {
       pushWord();
     } else if (char === "{" || char === "}") {
-      pushWord();
-      tokens.push({ type: "BRACE", value: char });
-    } else {
+  pushWord();
+  tokens.push({ type: "BRACE", value: char });
+  continue;
+}
+ else {
       current += char;
     }
   }
