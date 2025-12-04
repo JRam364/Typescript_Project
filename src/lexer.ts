@@ -6,30 +6,82 @@ export interface Token {
 export function tokenize(source: string): Token[] {
   const tokens: Token[] = [];
   let current = "";
+  let i = 0;
 
   function pushWord() {
     if (current.length > 0) {
-      tokens.push({
-        type: isNaN(Number(current)) ? "WORD" : "NUMBER",
-        value: current,
-      });
+      if (!isNaN(Number(current))) {
+        tokens.push({ type: "NUMBER", value: current });
+      } else {
+        tokens.push({ type: "IDENT", value: current });
+      }
       current = "";
     }
   }
 
-  for (const char of source) {
+  while (i < source.length) {
+    const char = source[i];
+
+    // WHITESPACE
     if (/\s/.test(char)) {
       pushWord();
-    } else if (char === "{" || char === "}") {
-  pushWord();
-  tokens.push({ type: "BRACE", value: char });
-  continue;
-}
- else {
-      current += char;
+      i++;
+      continue;
     }
-  }
-  pushWord();
 
+    // BRACES
+    if (char === "{" || char === "}") {
+      pushWord();
+      tokens.push({ type: "BRACE", value: char });
+      i++;
+      continue;
+    }
+
+    if (source.startsWith("==", i)) {
+    tokens.push({ type: "EQEQ", value: "==" });
+}
+if (source.startsWith("!=", i)) {
+    tokens.push({ type: "NOTEQ", value: "!=" });
+}
+if (char === "<") {
+    tokens.push({ type: "LT", value: "<" });
+}
+if (char === ">") {
+    tokens.push({ type: "GT", value: ">" });
+}
+
+
+    // = (assignment)
+    if (char === "=") {
+      pushWord();
+      tokens.push({ type: "EQUAL", value: "=" });
+      i++;
+      continue;
+    }
+
+
+    if (char === '"') {
+    i++;
+    let value = "";
+    while (i < source.length && source[i] !== '"') {
+        value += source[i++];
+    }
+    i++; // skip closing quote
+    tokens.push({ type: "STRING", value });
+    continue;
+}
+
+    // IDENTIFIER / NUMBER / player.x
+    if (/[a-zA-Z0-9._]/.test(char)) {
+      current += char;
+      i++;
+      continue;
+    }
+
+    // Unknown character → ignore or error
+    i++;
+  }
+
+  pushWord();
   return tokens;
 }
