@@ -1,66 +1,133 @@
 import { Token } from "./lexer";
-import { Program, CommandNode } from "./ast";
+import { CommandNode, Program } from "./ast";
 
 export function parse(tokens: Token[]): Program {
   const result = parseBlock(tokens, 0);
   return { type: "Program", body: result.commands };
 }
 
-function parseBlock(tokens: Token[], i: number): { commands: CommandNode[], index: number } {
+//
+// Parse a block, starting at index i
+//
+function parseBlock(
+  tokens: Token[],
+  i: number
+): { commands: CommandNode[]; index: number } {
   const commands: CommandNode[] = [];
 
-  // Skip leading {
+  // Skip leading '{'
   if (tokens[i]?.value === "{") i++;
 
   while (i < tokens.length) {
     const t = tokens[i];
 
-    // END BLOCK
+    // ===============================
+    // End of block
+    // ===============================
     if (t.value === "}") {
       return { commands, index: i };
     }
 
-    // --------------------------------------------------
+    // ===============================
+    // VAR DECL — int x = 5
+    // ===============================
+    if (t.value === "int" || t.value === "string") {
+    const varType = t.value as "int" | "string";
+    const name = tokens[i + 1].value;
+
+    if (tokens[i + 2]?.value !== "=")
+        throw new Error("Expected '=' in variable declaration");
+
+    const valueToken = tokens[i + 3];
+
+    let value: any;
+
+    // ===========================
+    // Case 1: int x = 5
+    // ===========================
+    if (valueToken.type === "NUMBER") {
+        value = Number(valueToken.value);
+        i += 4;
+    }
+
+    // ===========================
+    // Case 2: int x = y
+    // ===========================
+    else if (valueToken.type === "IDENT" && tokens[i + 4]?.type !== "PLUS") {
+        value = valueToken.value; // variable reference
+        i += 4;
+    }
+
+    // ===========================
+    // Case 3: int x = y + 1
+    // ===========================
+    else if (valueToken.type === "IDENT" && tokens[i + 4]?.value === "+") {
+        const left = valueToken.value;
+        const right = Number(tokens[i + 5].value);
+
+        value = { 
+            op: "ADD", 
+            left, 
+            right 
+        };
+
+        i += 6;
+    }
+
+    else {
+        throw new Error("Invalid variable assignment at token: " + valueToken.value);
+    }
+
+    commands.push({
+        type: "VarDecl",
+        varType,
+        name,
+        value
+    });
+
+    continue;
+}
+
+
+    // ===============================
     // IF STATEMENT
-    // --------------------------------------------------
+    // if a < b { ... } else { ... }
+    // ===============================
     if (t.value === "if") {
       const leftToken = tokens[i + 1];
       const opToken = tokens[i + 2];
       const rightToken = tokens[i + 3];
 
       const left =
-        leftToken.type === "NUMBER" ? Number(leftToken.value) : leftToken.value;
+        leftToken.type === "NUMBER"
+          ? Number(leftToken.value)
+          : leftToken.value;
 
       const right =
-        rightToken.type === "NUMBER" ? Number(rightToken.value) : rightToken.value;
+        rightToken.type === "NUMBER"
+          ? Number(rightToken.value)
+          : rightToken.value;
 
-      const opMap: Record<string, any> = {
+      const opMap: any = {
         LT: "LT",
         GT: "GT",
         EQEQ: "EQEQ",
-        NOTEQ: "NOTEQ",
+        NOTEQ: "NOTEQ"
       };
 
       const op = opMap[opToken.type];
-      if (!op) throw new Error("Invalid IF operator: " + opToken.value);
+      if (!op) throw new Error("Invalid operator in IF: " + opToken.value);
 
-      // Expect "{"
-      if (tokens[i + 4]?.value !== "{")
-        throw new Error("Expected '{' after IF condition");
+      // Parse THEN block
+      const thenBlock = parseBlock(tokens, i + 5);
+      let nextIndex = thenBlock.index + 1;
 
-      const thenBlock = parseBlock(tokens, i + 4);
-      let cursor = thenBlock.index + 1;
-
+      // Parse optional ELSE
       let elseBody: CommandNode[] | null = null;
-      if (tokens[cursor]?.value === "else") {
-        if (tokens[cursor + 1]?.value !== "{")
-          throw new Error("Expected '{' after ELSE");
-
-        const elseBlock = parseBlock(tokens, cursor + 1);
+      if (tokens[nextIndex]?.value === "else") {
+        const elseBlock = parseBlock(tokens, nextIndex + 2);
         elseBody = elseBlock.commands;
-        i = elseBlock.index + 1;
-      } else {
-        i = cursor;
+        nextIndex = elseBlock.index + 1;
       }
 
       commands.push({
@@ -70,20 +137,65 @@ function parseBlock(tokens: Token[], i: number): { commands: CommandNode[], inde
         elseBody
       });
 
+      i = nextIndex;
       continue;
     }
 
-    // --------------------------------------------------
-    // MOVE TO — move name to X Y [speed N]
-    // --------------------------------------------------
+
+        // ---------------------------
+    // WHILE LOOP
+    // while <left> <op> <right> { ... }
+    // ---------------------------
+    if (t.value === "while") {
+
+      const leftToken  = tokens[i + 1];
+      const opToken    = tokens[i + 2];
+      const rightToken = tokens[i + 3];
+
+      const left  = leftToken.type === "NUMBER" ? Number(leftToken.value) : leftToken.value;
+      const right = rightToken.type === "NUMBER" ? Number(rightToken.value) : rightToken.value;
+
+      let op: "LT" | "GT" | "EQEQ" | "NOTEQ";
+      switch (opToken.type) {
+        case "LT": op = "LT"; break;
+        case "GT": op = "GT"; break;
+        case "EQEQ": op = "EQEQ"; break;
+        case "NOTEQ": op = "NOTEQ"; break;
+        default:
+          throw new Error("Invalid operator in WHILE: " + opToken.value);
+      }
+
+      if (tokens[i + 4]?.value !== "{")
+        throw new Error("Expected '{' after while condition");
+
+      const block = parseBlock(tokens, i + 5);
+
+      commands.push({
+        type: "While",
+        condition: { left, op, right },
+        body: block.commands
+      });
+
+      i = block.index + 1;
+      continue;
+    }
+
+
+    // ===============================
+    // MOVE TO
+    // move obstacle to X Y speed N
+    // ===============================
     if (t.value === "move" && tokens[i + 2]?.value === "to") {
       const name = tokens[i + 1].value;
 
-      const xToken = tokens[i + 3];
-      const yToken = tokens[i + 4];
+      const xTok = tokens[i + 3];
+      const yTok = tokens[i + 4];
 
-      const x = xToken.type === "NUMBER" ? Number(xToken.value) : xToken.value;
-      const y = yToken.type === "NUMBER" ? Number(yToken.value) : yToken.value;
+      const x =
+        xTok.type === "NUMBER" ? Number(xTok.value) : xTok.value;
+
+      const y =
+        yTok.type === "NUMBER" ? Number(yTok.value) : yTok.value;
 
       let speed = 1;
       let advance = 5;
@@ -93,21 +205,33 @@ function parseBlock(tokens: Token[], i: number): { commands: CommandNode[], inde
         advance = 7;
       }
 
-      commands.push({ type: "MoveTo", name, x, y, speed });
+      commands.push({
+        type: "MoveTo",
+        name,
+        x,
+        y,
+        speed
+      });
+
       i += advance;
       continue;
     }
 
-    // --------------------------------------------------
-    // MOVE — move name dx dy [speed N]
-    // --------------------------------------------------
+    // ===============================
+    // MOVE (relative)
+    // move enemy 10 0 speed 2
+    // ===============================
     if (t.value === "move") {
       const name = tokens[i + 1].value;
+
       const dxTok = tokens[i + 2];
       const dyTok = tokens[i + 3];
 
-      const dx = dxTok.type === "NUMBER" ? Number(dxTok.value) : dxTok.value;
-      const dy = dyTok.type === "NUMBER" ? Number(dyTok.value) : dyTok.value;
+      const dx =
+        dxTok.type === "NUMBER" ? Number(dxTok.value) : dxTok.value;
+
+      const dy =
+        dyTok.type === "NUMBER" ? Number(dyTok.value) : dyTok.value;
 
       let speed = 1;
       let advance = 4;
@@ -122,46 +246,39 @@ function parseBlock(tokens: Token[], i: number): { commands: CommandNode[], inde
       continue;
     }
 
-    // --------------------------------------------------
-    // VAR DECL (int)
-    // --------------------------------------------------
-    if (t.value === "int") {
-      const name = tokens[i + 1].value;
+    // ===============================
+    // REPEAT — repeat x times { ... }
+    // ===============================
+    if (t.value === "repeat") {
+      const cntTok = tokens[i + 1];
 
-      if (tokens[i + 2]?.value !== "=")
-        throw new Error("Expected '=' in int declaration");
+      const count =
+        cntTok.type === "NUMBER"
+          ? Number(cntTok.value)
+          : cntTok.value;
 
-      const value = Number(tokens[i + 3].value);
-      commands.push({ type: "VarDecl", varType: "int", name, value });
-      i += 4;
-      continue;
-    }
+      if (tokens[i + 2]?.value !== "times")
+        throw new Error("Expected 'times' after repeat");
 
-    // --------------------------------------------------
-    // VAR DECL (string)
-    // --------------------------------------------------
-    if (t.value === "string") {
-      const name = tokens[i + 1].value;
+      if (tokens[i + 3]?.value !== "{")
+        throw new Error("Expected '{' after repeat N times");
 
-      if (tokens[i + 2]?.value !== "=")
-        throw new Error("Expected '=' in string declaration");
-
-      const valTok = tokens[i + 3];
+      const inner = parseBlock(tokens, i + 3);
 
       commands.push({
-        type: "VarDecl",
-        varType: "string",
-        name,
-        value: valTok.value
+        type: "Repeat",
+        count,
+        body: inner.commands
       });
 
-      i += 4;
+      i = inner.index + 1;
       continue;
     }
 
-    // --------------------------------------------------
+    // ===============================
     // SPAWN
-    // --------------------------------------------------
+    // spawn obstacle 100 100 red
+    // ===============================
     if (t.value === "spawn") {
       commands.push({
         type: "Spawn",
@@ -170,59 +287,88 @@ function parseBlock(tokens: Token[], i: number): { commands: CommandNode[], inde
         y: Number(tokens[i + 3].value),
         color: tokens[i + 4]?.value ?? "gray"
       });
+
       i += 5;
       continue;
     }
 
-    // --------------------------------------------------
+    // ===============================
     // CONTROL
-    // --------------------------------------------------
+    // control player with arrows
+    // ===============================
     if (t.value === "control") {
       commands.push({
         type: "Control",
         name: tokens[i + 1].value,
         scheme: tokens[i + 3].value
       });
+
       i += 4;
       continue;
     }
+        // ----------------------------------------
+    // FUNCTION DECLARATION
+    // func name { ... }
+    // ----------------------------------------
+    // ─────────────────────────────
+// FUNCTION DECLARATION
+// func name() { ... }
+// ─────────────────────────────
+if (t.value === "func") {
+  const name = tokens[i + 1].value;
 
-    // --------------------------------------------------
-    // REPEAT
-    // --------------------------------------------------
-    // --------------------------------------------------
-// REPEAT
-// --------------------------------------------------
-if (t.value === "repeat") {
-  const countToken = tokens[i + 1];
+  // Expect "("
+  if (tokens[i + 2].value !== "(") {
+    throw new Error("Expected '(' after function name");
+  }
 
-  const count =
-    countToken.type === "NUMBER"
-      ? Number(countToken.value)
-      : countToken.value; // support variable names
+  // PARAMETERS (not yet implemented — empty for now)
+  const params: string[] = [];
 
-  if (tokens[i + 2]?.value !== "times")
-    throw new Error("Expected 'times' after repeat");
+  // Find ")"
+  let j = i + 3;
+  while (tokens[j].value !== ")") {
+    // Later you can parse real parameters here
+    j++;
+  }
 
-  if (tokens[i + 3]?.value !== "{")
-    throw new Error("Expected '{' after repeat");
+  // Expect "{"
+  if (tokens[j + 1].value !== "{") {
+    throw new Error("Expected '{' after function parameter list");
+  }
 
-  // FIX HERE → start after the '{'
-  const block = parseBlock(tokens, i + 4);
+  // Parse body
+  const bodyBlock = parseBlock(tokens, j + 2);
 
   commands.push({
-    type: "Repeat",
-    count,
-    body: block.commands
+    type: "FuncDecl",
+    name,
+    params,               // REQUIRED
+    body: bodyBlock.commands
   });
 
-  // move index past closing '}'
-  i = block.index + 1;
+  i = bodyBlock.index + 1;
   continue;
 }
 
+        // ─────────────────────────────
+    // CALL functionName
+    // ─────────────────────────────
+    if (t.value === "call") {
+      const name = tokens[i + 1].value;
+
+      commands.push({
+        type: "Call",
+        name,
+        args: []  // no params yet
+      });
+
+      i += 2;
+      continue;
+    }
 
 
+    // UNKNOWN COMMAND
     console.warn("Unknown command:", t);
     i++;
   }

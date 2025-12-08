@@ -36,6 +36,14 @@ export function tokenize(source: string): Token[] {
       i++;
       continue;
     }
+    // Parentheses
+if (char === "(" || char === ")") {
+    pushWord();
+    tokens.push({ type: "PAREN", value: char });
+    i++;
+    continue;
+}
+
 
     if (source.startsWith("==", i)) {
     tokens.push({ type: "EQEQ", value: "==" });
@@ -71,12 +79,20 @@ if (char === ">") {
     continue;
 }
 
-    // IDENTIFIER / NUMBER / player.x
-    if (/[a-zA-Z0-9._]/.test(char)) {
-      current += char;
-      i++;
-      continue;
-    }
+
+// 1. Negative numbers
+if (char === "-" && /\d/.test(source[i + 1])) {
+  current += char;
+  i++;
+  continue;
+}
+
+// 2. Normal word/number characters
+if (/[a-zA-Z0-9._]/.test(char)) {
+  current += char;
+  i++;
+  continue;
+}
 
     // Unknown character → ignore or error
     i++;

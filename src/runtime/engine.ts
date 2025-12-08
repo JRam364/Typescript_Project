@@ -1,271 +1,204 @@
-
-interface Entity {
+export interface Entity {
   x: number;
   y: number;
   color: string;
+
+  width: number;
+  height: number;
+
   speed: number;
 
-  // for continuous (directional) movement or moveTo
-  vx: number;
-  vy: number;
-
-  // queue of relative moves: move name dx dy speed
-  actions: {
-    dx: number;
-    dy: number;
-    remaining: number;
-    onFinish?: () => void;
-  }[];
-
-  // for moveTo
-  targetX?: number;
-  targetY?: number;
-  onFinishMove?: () => void;
-
-  [key: string]: any;
+  // ONE active movement at a time
+  currentMove: MoveAction | null;
 }
 
+
+type MoveAction =
+    | {
+          type: "linear";   // move dx, dy over N steps
+          dxStep: number;
+          dyStep: number;
+          stepsRemaining: number;
+          resolve: () => void;
+      }
+    | {
+          type: "to";       // move toward x,y until reached
+          targetX: number;
+          targetY: number;
+          speed: number;
+          resolve: () => void;
+      };
+
 export class GameWorld {
-  private ctx: CanvasRenderingContext2D;
-  private keys: Set<string> = new Set();
+    private ctx: CanvasRenderingContext2D;
+    private keys: Set<string> = new Set();
 
-  private entities: Record<string, Entity> = {};
+    private entities: Record<string, Entity> = {};
 
-  private controlledEntity: string | null = null;
-  private controlScheme: "arrows" | "wasd" | null = null;
+    private controlledEntity: string | null = null;
+    private controlScheme: "arrows" | "wasd" | null = null;
 
-  constructor(canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas context not found");
-    this.ctx = ctx;
+    constructor(canvas: HTMLCanvasElement) {
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas context not found");
+        this.ctx = ctx;
 
-    window.addEventListener("keydown", (e) => this.keys.add(e.key));
-    window.addEventListener("keyup", (e) => this.keys.delete(e.key));
-  }
+        window.addEventListener("keydown", e => this.keys.add(e.key));
+        window.addEventListener("keyup", e => this.keys.delete(e.key));
+    }
 
-  // ---------- ENTITY HELPERS ----------
+    // -----------------------------------------------------------------
+    // Entity creation
+    // -----------------------------------------------------------------
+    spawn(name: string, x: number, y: number, color = "white") {
+        this.entities[name] = {
+            x,
+            y,
+            color,
+            width: 40,
+            height: 40,
+            speed: 4,
+            currentMove: null
+        };
+    }
 
-  spawn(name: string, x: number, y: number, color = "white") {
-    console.log("SPAWN:", name, x, y, color);
-    this.entities[name] = {
-      x,
-      y,
-      color,
-      speed: 4,
-      vx: 0,
-      vy: 0,
-      actions: [],
+    getEntity(name: string): Entity | null {
+        return this.entities[name] ?? null;
+    }
+
+    // -----------------------------------------------------------------
+    // Movement SYSTEM — sequential, one active move per entity
+    // -----------------------------------------------------------------
+// Relative movement (dx, dy over time)
+move(name: string, dx: number, dy: number, speed = 1): Promise<void> {
+  const e = this.entities[name];
+  if (!e) return Promise.resolve();
+
+  return new Promise(resolve => {
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const steps = Math.max(1, Math.floor(dist / speed));
+
+    e.currentMove = {
+      type: "linear",
+      dxStep: dx / steps,
+      dyStep: dy / steps,
+      stepsRemaining: steps,
+      resolve
     };
-  }
+  });
+}
 
-  getEntity(name: string) {
-    return this.entities[name] || null;
-  }
 
-  // ---------- MOVEMENT APIS (used by your language) ----------
+    // Absolute movement (go to target)
+    moveTo(name: string, x: number, y: number, speed: number): Promise<void> {
+        const e = this.entities[name];
+        if (!e) return Promise.resolve();
 
-  /**
-   * Relative movement: move name dx dy speed
-   * Returns a Promise that resolves when the move is finished.
-   */
-  move(name: string, dx: number, dy: number, speed = 1): Promise<void> {
-    const e = this.entities[name];
-    if (!e) return Promise.resolve();
-
-    return new Promise((resolve) => {
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      const steps = Math.max(1, Math.floor(distance / speed));
-
-      e.actions.push({
-        dx: dx / steps,
-        dy: dy / steps,
-        remaining: steps,
-        onFinish: resolve,
-      });
-    });
-  }
-
-  /**
-   * Absolute movement: move name to x y speed
-   * Returns a Promise that resolves when the entity reaches the target.
-   */
-  moveTo(name: string, x: number, y: number, speed: number): Promise<void> {
-    const e = this.entities[name];
-    if (!e) return Promise.resolve();
-
-    return new Promise((resolve) => {
-      if (x === undefined || y === undefined || speed === undefined) {
-        console.error("Invalid moveTo:", name, x, y, speed);
-        resolve();
-        return;
-      }
-
-      if (isNaN(e.x) || isNaN(e.y)) {
-        console.error("Cannot move entity with NaN position:", e);
-        resolve();
-        return;
-      }
-
-      const dx = x - e.x;
-      const dy = y - e.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (!isFinite(dist) || dist === 0) {
-        resolve();
-        return;
-      }
-
-      e.vx = (dx / dist) * speed;
-      e.vy = (dy / dist) * speed;
-
-      e.targetX = x;
-      e.targetY = y;
-      e.onFinishMove = resolve;
-    });
-  }
-
-  /**
-   * Continuous directional movement (until stop())
-   */
-  moveDir(name: string, direction: string, speed: number) {
-    const e = this.entities[name];
-    if (!e) return;
-
-    if (direction === "right") {
-      e.vx = speed;
-      e.vy = 0;
+        return new Promise(resolve => {
+            e.currentMove = {
+                type: "to",
+                targetX: x,
+                targetY: y,
+                speed,
+                resolve
+            };
+        });
     }
-    if (direction === "left") {
-      e.vx = -speed;
-      e.vy = 0;
+
+    // -----------------------------------------------------------------
+    // Keyboard control
+    // -----------------------------------------------------------------
+    enableControl(name: string, scheme: string) {
+        this.controlledEntity = name;
+        this.controlScheme = scheme as any;
     }
-    if (direction === "up") {
-      e.vx = 0;
-      e.vy = -speed;
-    }
-    if (direction === "down") {
-      e.vx = 0;
-      e.vy = speed;
-    }
-  }
 
-  stop(name: string) {
-    const e = this.entities[name];
-    if (!e) return;
-    e.vx = 0;
-    e.vy = 0;
-  }
+    private updateControl() {
+        if (!this.controlledEntity) return;
+        const e = this.entities[this.controlledEntity];
+        if (!e) return;
 
-  // ---------- CONTROL ----------
-
-  enableControl(name: string, scheme: string) {
-    this.controlledEntity = name;
-    this.controlScheme = scheme as "arrows" | "wasd";
-  }
-
-  // ---------- MAIN UPDATE LOOP ----------
-
-  private update() {
-    // keyboard control
-    if (this.controlledEntity) {
-      const e = this.entities[this.controlledEntity];
-      if (e) {
         if (this.controlScheme === "arrows") {
-          if (this.keys.has("ArrowUp")) e.y -= e.speed;
-          if (this.keys.has("ArrowDown")) e.y += e.speed;
-          if (this.keys.has("ArrowLeft")) e.x -= e.speed;
-          if (this.keys.has("ArrowRight")) e.x += e.speed;
+            if (this.keys.has("ArrowUp")) e.y -= e.speed;
+            if (this.keys.has("ArrowDown")) e.y += e.speed;
+            if (this.keys.has("ArrowLeft")) e.x -= e.speed;
+            if (this.keys.has("ArrowRight")) e.x += e.speed;
         }
 
         if (this.controlScheme === "wasd") {
-          if (this.keys.has("w")) e.y -= e.speed;
-          if (this.keys.has("s")) e.y += e.speed;
-          if (this.keys.has("a")) e.x -= e.speed;
-          if (this.keys.has("d")) e.x += e.speed;
+            if (this.keys.has("w")) e.y -= e.speed;
+            if (this.keys.has("s")) e.y += e.speed;
+            if (this.keys.has("a")) e.x -= e.speed;
+            if (this.keys.has("d")) e.x += e.speed;
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Update movement for ALL entities
+    // -----------------------------------------------------------------
+    private updateMovement() {
+  for (const e of Object.values(this.entities)) {
+    const m = e.currentMove;
+    if (!m) continue;
+
+    if (m.type === "linear") {
+      e.x += m.dxStep;
+      e.y += m.dyStep;
+
+      m.stepsRemaining--;
+      if (m.stepsRemaining <= 0) {
+        e.currentMove = null;
+        m.resolve();
       }
     }
 
-    // movement (per entity)
-    for (const e of Object.values(this.entities)) {
-      // 1) If a moveTo() is active, handle that first and exclusively
-      if (e.targetX !== undefined && e.targetY !== undefined) {
-        const dx = e.targetX - e.x;
-        const dy = e.targetY - e.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+    else if (m.type === "to") {
+      const dx = m.targetX - e.x;
+      const dy = m.targetY - e.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
 
-        // apply velocity
-        e.x += e.vx;
-        e.y += e.vy;
-
-        // check arrival
-        const stepLen = Math.sqrt(e.vx * e.vx + e.vy * e.vy);
-        if (dist <= stepLen) {
-          e.x = e.targetX;
-          e.y = e.targetY;
-          e.vx = 0;
-          e.vy = 0;
-
-          const cb = e.onFinishMove;
-          if (cb) cb();
-
-          delete e.targetX;
-          delete e.targetY;
-          delete e.onFinishMove;
-        }
-
-        continue; // skip other movement modes if moveTo is active
+      if (dist <= m.speed) {
+        e.x = m.targetX;
+        e.y = m.targetY;
+        e.currentMove = null;
+        m.resolve();
+      } else {
+        e.x += (dx / dist) * m.speed;
+        e.y += (dy / dist) * m.speed;
       }
-
-      // 2) Relative queued actions (move dx dy)
-      if (e.actions.length > 0) {
-        const action = e.actions[0];
-
-        e.x += action.dx;
-        e.y += action.dy;
-
-        action.remaining--;
-
-        if (action.remaining <= 0) {
-          if (action.onFinish) action.onFinish();
-          e.actions.shift();
-        }
-
-        continue; // don't also apply vx/vy this frame
-      }
-
-      // 3) Continuous directional movement (from moveDir)
-      if (e.vx !== 0 || e.vy !== 0) {
-        e.x += e.vx;
-        e.y += e.vy;
-      }
-    }
-
-    // clamp inside canvas
-    for (const e of Object.values(this.entities)) {
-      e.x = Math.max(0, Math.min(760, e.x));
-      e.y = Math.max(0, Math.min(560, e.y));
     }
   }
+}
 
-  // ---------- RENDER ----------
 
-  private render() {
-    this.ctx.clearRect(0, 0, 800, 600);
-    for (const e of Object.values(this.entities)) {
-      this.ctx.fillStyle = e.color;
-      this.ctx.fillRect(e.x, e.y, 40, 40);
+    // -----------------------------------------------------------------
+    // World update loop
+    // -----------------------------------------------------------------
+    private update() {
+        this.updateControl();
+        this.updateMovement();
     }
-  }
 
-  // ---------- GAME LOOP ----------
+    // -----------------------------------------------------------------
+    // Rendering
+    // -----------------------------------------------------------------
+    private render() {
+        this.ctx.clearRect(0, 0, 800, 600);
+        for (const e of Object.values(this.entities)) {
+            this.ctx.fillStyle = e.color;
+            this.ctx.fillRect(e.x, e.y, e.width, e.height);
+        }
+    }
 
-  run() {
-    const loop = () => {
-      this.update();
-      this.render();
-      requestAnimationFrame(loop);
-    };
-    requestAnimationFrame(loop);
-  }
+    // -----------------------------------------------------------------
+    // Game loop (60 FPS)
+    // -----------------------------------------------------------------
+    run() {
+        const loop = () => {
+            this.update();
+            this.render();
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
 }

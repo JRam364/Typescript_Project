@@ -1,168 +1,127 @@
 import { CommandNode } from "./ast";
 import { GameWorld } from "./runtime/engine";
+import { RuntimeContext } from "./runtime/context";
 
-const variables: Record<string, any> = {};
+export async function executeBlock(
+  commands: CommandNode[],
+  world: GameWorld,
+  ctx: RuntimeContext
+) {
+  for (const cmd of commands) {
+    await execute(cmd, world, ctx);
+  }
+}
 
-export async function execute(node: CommandNode, world: GameWorld): Promise<void> {
+export async function execute(
+  node: CommandNode,
+  world: GameWorld,
+  ctx: RuntimeContext
+): Promise<void> {
 
   switch (node.type) {
+
+    case "VarDecl":
+      ctx.vars[node.name] = node.value;
+      return;
+
     case "Spawn":
       world.spawn(node.name, node.x, node.y, node.color);
-      break;
+      return;
 
-    case "Move": {
-    const dx = typeof node.dx === "string" ? variables[node.dx] : node.dx;
-    const dy = typeof node.dy === "string" ? variables[node.dy] : node.dy;
+    case "Move":
+      await world.move(
+        node.name,
+        resolveNumber(node.dx, ctx),
+        resolveNumber(node.dy, ctx),
+        node.speed ?? 1
+      );
+      return;
 
-    // ensure values are numbers
-    world.move(node.name, Number(dx), Number(dy), node.speed ?? 1);
-    break;
-}
+    case "MoveTo":
+      await world.moveTo(
+        node.name,
+        resolveNumber(node.x, ctx),
+        resolveNumber(node.y, ctx),
+        node.speed
+      );
+      return;
 
+    case "Repeat": {
+      let count = resolveValue(node.count, ctx);
+      count = Number(count);
 
-    case "MoveTo": {
-    const x = typeof node.x === "string" ? variables[node.x] : node.x;
-    const y = typeof node.y === "string" ? variables[node.y] : node.y;
-
-    await world.moveTo(node.name, Number(x), Number(y), node.speed);
-    break;
-}
-
-
-
-    case "MoveDir":
-      world.moveDir(node.name, node.direction, node.speed ?? 1);
-      break;
-
-    case "Stop":
-      world.stop(node.name);
-      break;
+      for (let i = 0; i < count; i++) {
+        await executeBlock(node.body, world, ctx);
+      }
+      return;
+    }
 
     case "Control":
       world.enableControl(node.name, node.scheme);
-      break;
-
-    case "Repeat": {
-    let repeatCount = node.count;
-
-    // Resolve variable name → numeric value
-    if (typeof repeatCount === "string") {
-        repeatCount = variables[repeatCount];
-    }
-
-    repeatCount = Number(repeatCount) || 0;
-
-    for (let j = 0; j < repeatCount; j++) {
-        for (const inner of node.body) {
-            await execute(inner, world);
-        }
-    }
-    break;
-}
-
-
-    case "VarDecl":
-  if (node.varType === "int") {
-    variables[node.name] = Number(node.value);
-  } else if (node.varType === "string") {
-    variables[node.name] = String(node.value);
-  }
-  break;
-
+      return;
 
     case "If": {
-    let left = typeof node.condition.left === "string"
-      ? variables[node.condition.left]
-      : node.condition.left;
+      const cond = evaluateCondition(node, ctx);
 
-    let right = typeof node.condition.right === "string"
-      ? variables[node.condition.right]
-      : node.condition.right;
-
-    let cond = false;
-
-    switch (node.condition.op) {
-      case "LT":
-        cond = left < right;
-        break;
-      case "GT":
-        cond = left > right;
-        break;
-      case "EQEQ":
-        cond = left === right;
-        break;
-      case "NOTEQ":
-        cond = left !== right;
-        break;
+      if (cond) {
+        await executeBlock(node.thenBody, world, ctx);
+      } else if (node.elseBody) {
+        await executeBlock(node.elseBody, world, ctx);
+      }
+      return;
     }
 
-    if (cond) {
-       for (let cmd of node.thenBody) await execute(cmd, world);
-    } else if (node.elseBody) {
-       for (let cmd of node.elseBody) await execute(cmd, world);
+    case "While": {
+    while (evaluateCondition(node, ctx, world)) {
+        await executeBlock(node.body, world, ctx);
     }
-
-    break;
-}
-
-  }
-
-
-
-
-    function resolve(value: any) {
-    if (typeof value === "number") return value;
-    if (variables.hasOwnProperty(value)) return variables[value];
-    return value;
-  }
-
-  
+    return;
 }
 
 
+    case "FuncDecl":
+      ctx.funcs[node.name] = node.body;
+      return;
 
-// -----------------------------------------
-// Evaluate a boolean condition for IF
-// -----------------------------------------
-function evaluateCondition(node: Extract<CommandNode, { type: "If" }>, world: GameWorld): boolean {
-  const left = resolveComparisonValue(node.condition.left, world);
-  const right = resolveComparisonValue(node.condition.right, world);
+    case "Call":
+      const body = ctx.funcs[node.name];
+      if (!body) throw new Error("Unknown function: " + node.name);
+
+      await executeBlock(body, world, ctx);
+      return;
+  }
+}
+
+// helpers --------------------
+
+function resolveValue(value: any, ctx: RuntimeContext): any {
+  if (typeof value === "number") return value;
+  if (ctx.vars.hasOwnProperty(value)) return ctx.vars[value];
+  if (value && value.op === "ADD") {
+    const leftVal = resolveValue(value.left, ctx);
+    return leftVal + value.right;
+}
+
+  return value;
+}
+
+function resolveNumber(value: any, ctx: RuntimeContext): number {
+  const v = resolveValue(value, ctx);
+  const n = Number(v);
+  if (isNaN(n)) throw new Error("Expected number but got: " + v);
+  return n;
+}
+
+function evaluateCondition(node: any, ctx: RuntimeContext, world?: GameWorld): boolean {
+  const left = resolveValue(node.condition.left, ctx);
+  const right = resolveValue(node.condition.right, ctx);
 
   switch (node.condition.op) {
     case "LT": return left < right;
     case "GT": return left > right;
-    case "EQEQ": return left === right;
-    case "NOTEQ": return left !== right;
+    case "EQEQ": return left == right;
+    case "NOTEQ": return left != right;
   }
-
   return false;
 }
 
-
-
-// -----------------------------------------
-// Resolve identifiers or numbers
-// player.x  → world.entities[player].x
-// enemy.y   → world.entities[enemy].y
-// 200       → number literal
-// -----------------------------------------
-function resolveComparisonValue(value: any, world: GameWorld): number {
-  // numeric literal
-  if (typeof value === "number") return value;
-
-  // variable
-  if (variables.hasOwnProperty(value)) return variables[value];
-
-  // entity property (player.x)
-  if (typeof value === "string" && value.includes(".")) {
-    const [entity, prop] = value.split(".");
-    const ent = world.getEntity(entity);
-    if (!ent) return 0;
-    return ent[prop] ?? 0;
-  }
-
-  return 0;
-}
-
-
-  
