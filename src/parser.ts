@@ -1,10 +1,51 @@
 import { Token } from "./lexer";
 import { CommandNode, Program } from "./ast";
+import { ExprNode } from "./ast";
+
 
 export function parse(tokens: Token[]): Program {
   const result = parseBlock(tokens, 0);
   return { type: "Program", body: result.commands };
 }
+
+
+
+
+
+function parsePrimary(token: Token): ExprNode {
+  if (token.type === "NUMBER") {
+    return { type: "Number", value: Number(token.value) };
+  }
+  if (token.type === "IDENT") {
+    return { type: "Var", name: token.value };
+  }
+  throw new Error("Unexpected token in expression: " + token.value);
+}
+
+function parseExpression(tokens: Token[], i: number) {
+  let left = parsePrimary(tokens[i]);
+  i++;
+
+  // Parse: a + b - c + 1
+  while (tokens[i] && (tokens[i].value === "+" || tokens[i].value === "-")) {
+    const op = tokens[i].value as "+" | "-";
+    const right = parsePrimary(tokens[i + 1]);
+
+    left = {
+      type: "Binary",
+      op,
+      left,
+      right
+    };
+
+    i += 2;
+  }
+
+  return { node: left, index: i };
+}
+
+
+
 
 //
 // Parse a block, starting at index i
@@ -17,6 +58,7 @@ function parseBlock(
 
   // Skip leading '{'
   if (tokens[i]?.value === "{") i++;
+  
 
   while (i < tokens.length) {
     const t = tokens[i];
@@ -27,7 +69,13 @@ function parseBlock(
     if (t.value === "}") {
       return { commands, index: i };
     }
+// Ignore standalone parentheses
+if (t.type === "PAREN") {
+    i++;
+    continue;
+}
 
+    
     // ===============================
     // VAR DECL — int x = 5
     // ===============================
@@ -46,33 +94,37 @@ function parseBlock(
     // Case 1: int x = 5
     // ===========================
     if (valueToken.type === "NUMBER") {
-        value = Number(valueToken.value);
-        i += 4;
-    }
+    value = { type: "Number", value: Number(valueToken.value) };
+    i += 4;
+}
+
 
     // ===========================
     // Case 2: int x = y
     // ===========================
     else if (valueToken.type === "IDENT" && tokens[i + 4]?.type !== "PLUS") {
-        value = valueToken.value; // variable reference
-        i += 4;
-    }
+    value = { type: "Var", name: valueToken.value };
+    i += 4;
+}
+
 
     // ===========================
     // Case 3: int x = y + 1
     // ===========================
     else if (valueToken.type === "IDENT" && tokens[i + 4]?.value === "+") {
-        const left = valueToken.value;
-        const right = Number(tokens[i + 5].value);
+    const leftName = valueToken.value;
+    const rightValue = Number(tokens[i + 5].value);
 
-        value = { 
-            op: "ADD", 
-            left, 
-            right 
-        };
+    value = {
+        type: "Binary",
+        op: "+",
+        left: { type: "Var", name: leftName },
+        right: { type: "Number", value: rightValue }
+    };
 
-        i += 6;
-    }
+    i += 6;
+}
+
 
     else {
         throw new Error("Invalid variable assignment at token: " + valueToken.value);
@@ -87,6 +139,30 @@ function parseBlock(
 
     continue;
 }
+
+
+// ASSIGNMENT
+// score = score + 1
+// ===============================
+if (t.type === "IDENT" && tokens[i + 1]?.value === "=") {
+    const varName = t.value;
+
+    i += 2;
+
+    const exprRes = parseExpression(tokens, i);
+
+    i = exprRes.index; // STOP HERE — expression already consumed
+console.log("TOKENS:", tokens.slice(i, i+5));
+
+    commands.push({
+        type: "Assign",
+        name: varName,
+        value: exprRes.node
+    });
+
+    continue;
+}
+
 
 
     // ===============================
@@ -249,31 +325,35 @@ function parseBlock(
     // ===============================
     // REPEAT — repeat x times { ... }
     // ===============================
-    if (t.value === "repeat") {
-      const cntTok = tokens[i + 1];
+   if (t.value === "repeat") {
+    const cntTok = tokens[i + 1];
 
-      const count =
+    const count =
         cntTok.type === "NUMBER"
-          ? Number(cntTok.value)
-          : cntTok.value;
+            ? Number(cntTok.value)
+            : cntTok.value;
 
-      if (tokens[i + 2]?.value !== "times")
+    if (tokens[i + 2]?.value !== "times")
         throw new Error("Expected 'times' after repeat");
 
-      if (tokens[i + 3]?.value !== "{")
+    if (tokens[i + 3]?.value !== "{")
         throw new Error("Expected '{' after repeat N times");
 
-      const inner = parseBlock(tokens, i + 3);
+    // Parse the inner block STARTING AT "{"
+    const inner = parseBlock(tokens, i + 3);
 
-      commands.push({
+    commands.push({
         type: "Repeat",
         count,
         body: inner.commands
-      });
+    });
 
-      i = inner.index + 1;
-      continue;
-    }
+    // ⬅️ FIX: move index to AFTER the closing "}"
+    i = inner.index + 1;
+
+    continue;  // ⬅️ REQUIRED! Do not fall through.
+}
+
 
     // ===============================
     // SPAWN
@@ -366,6 +446,71 @@ if (t.value === "func") {
       i += 2;
       continue;
     }
+
+    // UI text command: ui <text> <x> <y> <color> <size>
+if (t.value === "ui") {
+    const textToken = tokens[i + 1];
+
+    const text = textToken.value;
+    const x = Number(tokens[i + 2].value);
+    const y = Number(tokens[i + 3].value);
+    const color = tokens[i + 4]?.value ?? "white";
+    const size = Number(tokens[i + 5]?.value ?? 20);
+
+    const isVar = textToken.type === "IDENT";
+
+    commands.push({
+        type: "UI",
+        text,
+        x,
+        y,
+        color,
+        size,
+        isVar
+    });
+
+    i += 6;
+    continue;
+}
+
+
+
+
+// ONUPDATE: triggers every frame
+if (t.value === "onupdate") {
+    if (tokens[i + 1]?.value !== "{")
+        throw new Error("Expected '{' after onupdate");
+
+    const block = parseBlock(tokens, i + 2);
+
+    commands.push({
+        type: "OnUpdate",
+        body: block.commands
+    });
+
+    i = block.index + 1; // move past '}'
+    continue;
+}
+
+if (t.value === "oncollision") {
+    const name = tokens[i+1].value;
+
+    if (tokens[i+2].value !== "{")
+        throw new Error("Expected '{' after oncollision");
+
+    const block = parseBlock(tokens, i+2);
+
+    commands.push({
+        type: "OnCollision",
+        name,
+        body: block.commands
+    });
+
+    i = block.index + 1;
+    continue;
+}
+
+
 
 
     // UNKNOWN COMMAND

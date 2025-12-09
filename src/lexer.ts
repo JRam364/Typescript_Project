@@ -44,6 +44,21 @@ if (char === "(" || char === ")") {
     continue;
 }
 
+// PLUS
+if (char === "+") {
+    pushWord();
+    tokens.push({ type: "PLUS", value: "+" });
+    i++;
+    continue;
+}
+
+// MINUS operator (NOT negative number)
+if (char === "-" && !/\d/.test(source[i + 1])) {
+    pushWord();
+    tokens.push({ type: "MINUS", value: "-" });
+    i++;
+    continue;
+}
 
     if (source.startsWith("==", i)) {
     tokens.push({ type: "EQEQ", value: "==" });
@@ -78,6 +93,7 @@ if (char === ">") {
     tokens.push({ type: "STRING", value });
     continue;
 }
+
 
 
 // 1. Negative numbers

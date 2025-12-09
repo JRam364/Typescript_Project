@@ -1,3 +1,5 @@
+export type Expression = any;
+
 export type CommandNode =
   // FUNCTION DECLARATION
   | {
@@ -93,16 +95,63 @@ export type CommandNode =
       thenBody: CommandNode[];
       elseBody: CommandNode[] | null;
     }
-  |
-   {
-    type: "While";
-    condition: {
-      left: any;
-      op: "LT" | "GT" | "EQEQ" | "NOTEQ";
-      right: any;
-    };
+
+  // WHILE LOOP
+  | {
+      type: "While";
+      condition: {
+        left: any;
+        op: "LT" | "GT" | "EQEQ" | "NOTEQ";
+        right: any;
+      };
+      body: CommandNode[];
+    }
+
+    // UI
+    | {
+      type: "UI";
+      text: string;     // variable name or literal
+      x: number;
+      y: number;
+      color?: string;
+      size?: number;
+      isVar: boolean;   // <-- ADD THIS
+    }
+
+
+
+  // ONUPDATE
+  | {
+      type: "OnUpdate";
+      body: CommandNode[];
+    }
+
+  // ASSIGNMENT
+  |  {
+  type: "Assign";
+  name: string;
+  value: ExprNode;
+}
+|
+{
+    type: "OnCollision";
+    name: string;     
     body: CommandNode[];
-  };
+}
+
+
+
+
+export type ExprNode =
+  | { type: "Number"; value: number }
+  | { type: "Var"; name: string }
+  | { type: "Binary"; op: "+" | "-"; left: ExprNode; right: ExprNode }
+
+
+
+
+
+
 
 export interface Program {
   type: "Program";

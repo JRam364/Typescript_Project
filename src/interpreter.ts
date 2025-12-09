@@ -1,12 +1,16 @@
 import { CommandNode } from "./ast";
 import { GameWorld } from "./runtime/engine";
 import { RuntimeContext } from "./runtime/context";
+import { ExprNode } from "./ast";
+
 
 export async function executeBlock(
   commands: CommandNode[],
   world: GameWorld,
   ctx: RuntimeContext
+  
 ) {
+  console.log("Executing block once");
   for (const cmd of commands) {
     await execute(cmd, world, ctx);
   }
@@ -17,12 +21,22 @@ export async function execute(
   world: GameWorld,
   ctx: RuntimeContext
 ): Promise<void> {
+  
+
 
   switch (node.type) {
 
     case "VarDecl":
-      ctx.vars[node.name] = node.value;
-      return;
+  ctx.vars[node.name] = evalExpr(node.value as ExprNode, ctx);
+  return;
+
+    
+    case "Assign":
+  ctx.vars[node.name] = evalExpr(node.value, ctx);
+  return;
+
+
+
 
     case "Spawn":
       world.spawn(node.name, node.x, node.y, node.color);
@@ -73,7 +87,11 @@ export async function execute(
 
     case "While": {
     while (evaluateCondition(node, ctx, world)) {
-        await executeBlock(node.body, world, ctx);
+
+        // Run loop body SEQUENTIALLY, not as a batch
+        for (const cmd of node.body) {
+            await execute(cmd, world, ctx);
+        }
     }
     return;
 }
@@ -89,7 +107,31 @@ export async function execute(
 
       await executeBlock(body, world, ctx);
       return;
-  }
+  
+
+  case "UI":
+    world.addUI(node.text, node.x, node.y, node.color ?? "white", node.size ?? 20, node.isVar);
+    return;
+
+
+
+
+
+    case "OnUpdate":
+    ctx.onUpdate = async () => {
+        await executeBlock(node.body, world, ctx);
+    };
+    return;
+
+
+    case "OnCollision":
+    world.onCollision(node.name, async (other) => {
+        await executeBlock(node.body, world, ctx);
+    });
+    return;
+
+
+
 }
 
 // helpers --------------------
@@ -125,3 +167,24 @@ function evaluateCondition(node: any, ctx: RuntimeContext, world?: GameWorld): b
   return false;
 }
 
+function evalExpr(expr: ExprNode, ctx: RuntimeContext): number {
+  switch (expr.type) {
+    case "Number":
+      return expr.value;
+
+    case "Var":
+      return Number(ctx.vars[expr.name] ?? 0);
+
+    case "Binary":
+      const left = evalExpr(expr.left, ctx);
+      const right = evalExpr(expr.right, ctx);
+
+      if (expr.op === "+") return left + right;
+      if (expr.op === "-") return left - right;
+  }
+
+  throw new Error("Unknown expression type");
+}
+
+
+}

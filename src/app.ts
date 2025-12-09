@@ -36,30 +36,22 @@ function initRunButton() {
   const runBtn = document.getElementById("runBtn") as HTMLButtonElement;
 
   runBtn.onclick = async () => {
-
     const code = editor.getValue();
 
-    // Tokenize + Parse
     const tokens = tokenize(code);
-    console.log("TOKENS:", tokens);
-
     const ast = parse(tokens);
-    console.log("AST:", JSON.stringify(ast.body, null, 2));
 
-    // Create game world
     const canvas = document.getElementById("game") as HTMLCanvasElement;
     const world = new GameWorld(canvas);
-    world.run();
 
-    // Debugging convenience
-    (window as any).world = world;
-
-    // Create runtime variable store
     const ctx = createContext();
 
-    // Execute program SEQUENTIALLY
+    world.run(ctx);
+
+    // Only RUN THE PROGRAM ONCE
     await executeBlock(ast.body, world, ctx);
-  };
+};
+
 }
 
 //
