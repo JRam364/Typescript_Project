@@ -3,10 +3,3 @@ control player with arrows
 
 spawn obstacle 150 100 green
 
-repeat 5 times{
-
-    move obstacle 20 50 speed 1
-    
-    
-}
-

@@ -10,10 +10,14 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
     "build": "tsc && vite build",
-    "run": "ts-node src/cli.ts examples/demo.gm"
+    "run": "ts-node src/cli.ts examples/demo.gm",
+
+    "build-client": "tsc src/client.ts --outDir server/public --module ES2020 --target ES2019",
+    "start": "node dist/server/server.js"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "@types/ws": "^8.18.1",
     "chalk": "^5.6.2",
     "commander": "^14.0.2",
     "ts-node": "^10.9.2",
@@ -21,6 +25,18 @@
     "vite": "^7.1.12"
   },
   "dependencies": {
-    "monaco-editor": "^0.55.1"
-  }
+    "monaco-editor": "^0.55.1",
+    "ws": "^8.18.3"
+  },
+  "directories": {
+    "example": "examples"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JRam364/Typescript_Project.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JRam364/Typescript_Project/issues"
+  },
+  "homepage": "https://github.com/JRam364/Typescript_Project#readme"
 }

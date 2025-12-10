@@ -10,6 +10,9 @@ export interface Entity {
   height: number;
 
   speed: number;
+  vx?: number;
+  vy?: number;
+
 
   // ONE active movement at a time
   currentMove: MoveAction | null;
@@ -121,6 +124,9 @@ move(name: string, dx: number, dy: number, speed = 1): Promise<void> {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const steps = Math.max(1, Math.floor(dist / speed));
 
+    e.vx = dx / steps;     // <-- ADD
+    e.vy = dy / steps;     // <-- ADD
+
     e.currentMove = {
       type: "linear",
       dxStep: dx / steps,
@@ -131,22 +137,29 @@ move(name: string, dx: number, dy: number, speed = 1): Promise<void> {
   });
 }
 
+moveTo(name: string, x: number, y: number, speed: number): Promise<void> {
+  const e = this.entities[name];
+  if (!e) return Promise.resolve();
 
-    // Absolute movement (go to target)
-    moveTo(name: string, x: number, y: number, speed: number): Promise<void> {
-        const e = this.entities[name];
-        if (!e) return Promise.resolve();
+  return new Promise(resolve => {
+    // compute initial velocity direction
+    const dx = x - e.x;
+    const dy = y - e.y;
+    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
 
-        return new Promise(resolve => {
-            e.currentMove = {
-                type: "to",
-                targetX: x,
-                targetY: y,
-                speed,
-                resolve
-            };
-        });
-    }
+    e.vx = (dx / dist) * speed;   // <-- ADD
+    e.vy = (dy / dist) * speed;   // <-- ADD
+
+    e.currentMove = {
+      type: "to",
+      targetX: x,
+      targetY: y,
+      speed,
+      resolve
+    };
+  });
+}
+
 
     // -----------------------------------------------------------------
     // Keyboard control
@@ -157,37 +170,70 @@ move(name: string, dx: number, dy: number, speed = 1): Promise<void> {
     }
 
     private updateControl() {
-        if (!this.controlledEntity) return;
-        const e = this.entities[this.controlledEntity];
-        if (!e) return;
+    if (!this.controlledEntity) return;
+    const e = this.entities[this.controlledEntity];
+    if (!e) return;
 
-        if (this.controlScheme === "arrows") {
-            if (this.keys.has("ArrowUp")) e.y += e.speed;
-            if (this.keys.has("ArrowDown")) e.y -= e.speed;
-            if (this.keys.has("ArrowLeft")) e.x -= e.speed;
-            if (this.keys.has("ArrowRight")) e.x += e.speed;
-        }
+    let vx = 0;
+    let vy = 0;
 
-        if (this.controlScheme === "wasd") {
-            if (this.keys.has("w")) e.y += e.speed;
-            if (this.keys.has("s")) e.y -= e.speed;
-            if (this.keys.has("a")) e.x -= e.speed;
-            if (this.keys.has("d")) e.x += e.speed;
-        }
+    if (this.controlScheme === "arrows") {
+        if (this.keys.has("ArrowUp"))    vy += e.speed;
+        if (this.keys.has("ArrowDown"))  vy -= e.speed;
+        if (this.keys.has("ArrowLeft"))  vx -= e.speed;
+        if (this.keys.has("ArrowRight")) vx += e.speed;
     }
 
-    checkCollision(a: Entity, b: Entity): boolean {
-    return !(
-        a.x + a.width < b.x ||
-        a.x > b.x + b.width ||
-        a.y + a.height < b.y ||
-        a.y > b.y + b.height
-    );
+    if (this.controlScheme === "wasd") {
+        if (this.keys.has("w")) vy += e.speed;
+        if (this.keys.has("s")) vy -= e.speed;
+        if (this.keys.has("a")) vx -= e.speed;
+        if (this.keys.has("d")) vx += e.speed;
+    }
+
+    // Save velocity for physics
+    e.vx = vx;
+    e.vy = vy;
+
+    // Apply movement
+    e.x += vx;
+    e.y += vy;
+
+    
 }
+
+
+    
 collisionHandlers: { [key: string]: (other: string) => void } = {};
 
 onCollision(name: string, handler: (other: string) => void) {
     this.collisionHandlers[name] = handler;
+}
+private checkCollision(A: Entity, B: Entity): boolean {
+  return !(
+    A.x + A.width < B.x ||
+    A.x > B.x + B.width ||
+    A.y + A.height < B.y ||
+    A.y > B.y + B.height
+  );
+}
+
+private getCollisionEntity(self: Entity, selfName: string): string | null {
+  for (const [name, e] of Object.entries(this.entities)) {
+    if (name === selfName) continue;
+    if (this.checkCollision(self, e)) return name;
+  }
+  return null;
+}
+
+private pushEntity(mover: Entity, pushed: Entity) {
+  const force = 2; // <-- adjust push strength
+
+  const vx = mover.vx ?? 0;
+  const vy = mover.vy ?? 0;
+
+  pushed.x += vx * force;
+  pushed.y += vy * force;
 }
 
 
@@ -224,19 +270,20 @@ private updateCollisions() {
     // -----------------------------------------------------------------
     // Update movement for ALL entities
     // -----------------------------------------------------------------
-    private updateMovement() {
+   private updateMovement() {
     for (const e of Object.values(this.entities)) {
         const m = e.currentMove;
         if (!m) continue;
 
+        // -------------------------------------------
+        // MOVEMENT
+        // -------------------------------------------
         if (m.type === "linear") {
             e.x += m.dxStep;
             e.y += m.dyStep;
             m.stepsRemaining--;
 
             if (m.stepsRemaining <= 0) {
-
-                // ✅ ONLY resolve if this move is still the active one
                 if (e.currentMove === m) {
                     e.currentMove = null;
                     m.resolve();
@@ -250,22 +297,68 @@ private updateCollisions() {
             const dist = Math.sqrt(dx*dx + dy*dy);
 
             if (dist <= m.speed && dist !== 0) {
-
-                // ✅ Prevent old replaced move from resolving
                 if (e.currentMove === m) {
                     e.x = m.targetX;
                     e.y = m.targetY;
                     e.currentMove = null;
                     m.resolve();
                 }
-
             } else if (dist > 0) {
                 e.x += (dx / dist) * m.speed;
                 e.y += (dy / dist) * m.speed;
             }
         }
+
+        // -------------------------------------------
+        // PUSHBACK (MUST be inside loop!)
+        // -------------------------------------------
+        // --- PUSHBACK & SEPARATION ---
+const moverName = Object.keys(this.entities).find(key => this.entities[key] === e);
+
+if (moverName) {
+    const hitName = this.getCollisionEntity(e, moverName);
+
+    if (hitName) {
+        const pushed = this.entities[hitName];
+
+        // 1. Compute overlap
+        const overlapX =
+            (e.width / 2 + pushed.width / 2) -
+            Math.abs((e.x + e.width / 2) - (pushed.x + pushed.width / 2));
+
+        const overlapY =
+            (e.height / 2 + pushed.height / 2) -
+            Math.abs((e.y + e.height / 2) - (pushed.y + pushed.height / 2));
+
+        // 2. Push along the axis of deepest penetration
+        if (overlapX < overlapY) {
+            // Push horizontally
+            if (e.x < pushed.x) pushed.x += overlapX;
+            else pushed.x -= overlapX;
+        } else {
+            // Push vertically
+            if (e.y < pushed.y) pushed.y += overlapY;
+            else pushed.y -= overlapY;
+        }
+
+        // 3. Add velocity-based push force
+        const fx = (e.vx ?? 0) * 2;
+        const fy = (e.vy ?? 0) * 2;
+
+        pushed.x += fx;
+pushed.y += fy;
+
+// Stop mover from continuing to overlap
+e.currentMove = null;
+e.vx = 0;
+e.vy = 0;
+
     }
 }
+
+    }
+}
+
 
 
 

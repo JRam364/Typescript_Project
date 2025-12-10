@@ -19,10 +19,7 @@ control player with arrows
 
 spawn obstacle 150 100 green
 
-repeat 5 times {
-    move obstacle to 50 100 speed 1
-    move obstacle to 150 100 speed 1
-}`,
+`,
     language: "plaintext",
     theme: "vs-dark",
     fontSize: 16
@@ -53,6 +50,19 @@ function initRunButton() {
 };
 
 }
+
+
+const socket = new WebSocket("ws://localhost:8080");
+
+socket.onopen = () => {
+    console.log("Connected to server!");
+    socket.send("Hello from client!");
+};
+
+socket.onmessage = (msg) => {
+    console.log("Server says:", msg.data);
+};
+
 
 //
 // MAIN
