@@ -5,10 +5,9 @@
     "strict": true,
     "esModuleInterop": true,
     "outDir": "dist",
-    "rootDir": "."        // <--- CHANGE THIS
+    "rootDir": "."        
   },
   "include": [
-    "src/**/*",
-    "server/**/*"         // <--- ADD THIS
+    "src/**/*"
   ]
 }

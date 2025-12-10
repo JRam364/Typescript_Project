@@ -152,7 +152,7 @@ if (t.type === "IDENT" && tokens[i + 1]?.value === "=") {
     const exprRes = parseExpression(tokens, i);
 
     i = exprRes.index; // STOP HERE — expression already consumed
-console.log("TOKENS:", tokens.slice(i, i+5));
+
 
     commands.push({
         type: "Assign",

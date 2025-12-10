@@ -112,9 +112,7 @@ addUI(text: string, x: number, y: number, color: string, size: number, isVar: bo
 
 
 
-    // -----------------------------------------------------------------
-    // Movement SYSTEM — sequential, one active move per entity
-    // -----------------------------------------------------------------
+    
 // Relative movement (dx, dy over time)
 move(name: string, dx: number, dy: number, speed = 1): Promise<void> {
   const e = this.entities[name];
@@ -137,6 +135,8 @@ move(name: string, dx: number, dy: number, speed = 1): Promise<void> {
   });
 }
 
+
+// Move to function moves to exact coordinates on game canvas
 moveTo(name: string, x: number, y: number, speed: number): Promise<void> {
   const e = this.entities[name];
   if (!e) return Promise.resolve();
@@ -226,15 +226,7 @@ private getCollisionEntity(self: Entity, selfName: string): string | null {
   return null;
 }
 
-private pushEntity(mover: Entity, pushed: Entity) {
-  const force = 2; // <-- adjust push strength
 
-  const vx = mover.vx ?? 0;
-  const vy = mover.vy ?? 0;
-
-  pushed.x += vx * force;
-  pushed.y += vy * force;
-}
 
 
 private updateCollisions() {
@@ -313,51 +305,51 @@ private updateCollisions() {
         // PUSHBACK (MUST be inside loop!)
         // -------------------------------------------
         // --- PUSHBACK & SEPARATION ---
-const moverName = Object.keys(this.entities).find(key => this.entities[key] === e);
+        const moverName = Object.keys(this.entities).find(key => this.entities[key] === e);
 
-if (moverName) {
-    const hitName = this.getCollisionEntity(e, moverName);
+        if (moverName) {
+            const hitName = this.getCollisionEntity(e, moverName);
 
-    if (hitName) {
-        const pushed = this.entities[hitName];
+            if (hitName) {
+                const pushed = this.entities[hitName];
 
-        // 1. Compute overlap
-        const overlapX =
-            (e.width / 2 + pushed.width / 2) -
-            Math.abs((e.x + e.width / 2) - (pushed.x + pushed.width / 2));
+                // 1. Compute overlap
+                const overlapX =
+                    (e.width / 2 + pushed.width / 2) -
+                    Math.abs((e.x + e.width / 2) - (pushed.x + pushed.width / 2));
 
-        const overlapY =
-            (e.height / 2 + pushed.height / 2) -
-            Math.abs((e.y + e.height / 2) - (pushed.y + pushed.height / 2));
+                const overlapY =
+                    (e.height / 2 + pushed.height / 2) -
+                    Math.abs((e.y + e.height / 2) - (pushed.y + pushed.height / 2));
 
-        // 2. Push along the axis of deepest penetration
-        if (overlapX < overlapY) {
-            // Push horizontally
-            if (e.x < pushed.x) pushed.x += overlapX;
-            else pushed.x -= overlapX;
-        } else {
-            // Push vertically
-            if (e.y < pushed.y) pushed.y += overlapY;
-            else pushed.y -= overlapY;
+                // 2. Push along the axis of deepest penetration
+                if (overlapX < overlapY) {
+                    // Push horizontally
+                    if (e.x < pushed.x) pushed.x += overlapX;
+                    else pushed.x -= overlapX;
+                } else {
+                    // Push vertically
+                    if (e.y < pushed.y) pushed.y += overlapY;
+                    else pushed.y -= overlapY;
+                }
+
+                // 3. Add velocity-based push force
+                const fx = (e.vx ?? 0) * 2;
+                const fy = (e.vy ?? 0) * 2;
+
+                pushed.x += fx;
+        pushed.y += fy;
+
+        // Stop mover from continuing to overlap
+        e.currentMove = null;
+        e.vx = 0;
+        e.vy = 0;
+
+            }
         }
 
-        // 3. Add velocity-based push force
-        const fx = (e.vx ?? 0) * 2;
-        const fy = (e.vy ?? 0) * 2;
-
-        pushed.x += fx;
-pushed.y += fy;
-
-// Stop mover from continuing to overlap
-e.currentMove = null;
-e.vx = 0;
-e.vy = 0;
-
-    }
-}
-
-    }
-}
+            }
+        }
 
 
 

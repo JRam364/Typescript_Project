@@ -6,15 +6,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "run": "ts-node src/cli.ts examples/demo.gm",
-
-    "build-client": "tsc src/client.ts --outDir server/public --module ES2020 --target ES2019",
-    "start": "node dist/server/server.js"
-  },
+  
   "devDependencies": {
     "@types/node": "^24.10.0",
     "@types/ws": "^8.18.1",
@@ -38,5 +30,12 @@
   "bugs": {
     "url": "https://github.com/JRam364/Typescript_Project/issues"
   },
+  "scripts": {
+  "dev": "vite",
+  "build": "vite build",
+  "preview": "vite preview",
+  "deploy": "npm run build && git add dist && git commit -m 'deploy' && git subtree push --prefix dist origin gh-pages"
+},
+
   "homepage": "https://github.com/JRam364/Typescript_Project#readme"
 }
