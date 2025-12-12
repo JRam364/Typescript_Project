@@ -27,7 +27,21 @@ export function tokenize(source: string): Token[] {
       pushWord();
       i++;
       continue;
+        }
+        // SINGLE-LINE COMMENT
+    if (source.startsWith("//", i)) {
+      while (i < source.length && source[i] !== "\n") i++;
+      continue;
     }
+
+    // MULTI-LINE COMMENT
+    if (source.startsWith("/*", i)) {
+      i += 2;
+      while (i < source.length && !source.startsWith("*/", i)) i++;
+      i += 2;
+      continue;
+    }
+
 
     // BRACES
     if (char === "{" || char === "}") {
